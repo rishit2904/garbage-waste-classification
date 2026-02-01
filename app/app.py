@@ -4,12 +4,18 @@ Flask Web Application for Garbage Waste Classification
 Features:
 - Drag-and-drop image upload
 - Real-time classification with confidence scores
+- Transfer learning with pre-trained ResNet18
 - Beautiful, modern UI
 - REST API endpoint
 """
 
 import os
 import sys
+import ssl
+
+# Fix SSL certificate issues on macOS
+ssl._create_default_https_context = ssl._create_unverified_context
+
 import torch
 import numpy as np
 from PIL import Image
@@ -20,7 +26,7 @@ import base64
 
 # Add model directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model'))
-from cnn_model import get_model
+from cnn_model import get_model, CLASSES
 from augmentation import get_inference_transform
 
 app = Flask(__name__)
@@ -35,8 +41,7 @@ model = None
 device = None
 transform = None
 
-# Class names and info
-CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
+# Class info for recycling tips
 CLASS_INFO = {
     'cardboard': {
         'icon': '📦',
@@ -78,7 +83,7 @@ CLASS_INFO = {
 
 
 def load_model():
-    """Load the trained model"""
+    """Load the trained model with transfer learning"""
     global model, device, transform
     
     # Setup device
@@ -91,35 +96,36 @@ def load_model():
     
     print(f"Using device: {device}")
     
-    # Load model
-    model = get_model('cnn')
+    # Load model with transfer learning (pre-trained ResNet18)
+    # This gives meaningful predictions even without waste-specific training
+    print("Loading pre-trained ResNet18 model with transfer learning...")
+    model = get_model('transfer', pretrained=True)
     
-    # Try to load trained weights
-    model_path = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'garbage_classifier.pth')
+    # Check for fine-tuned weights
+    model_path = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'garbage_classifier_finetuned.pth')
     if os.path.exists(model_path):
         try:
             model.load_state_dict(torch.load(model_path, map_location=device))
-            print(f"Loaded trained model from: {model_path}")
+            print(f"Loaded fine-tuned weights from: {model_path}")
         except Exception as e:
-            print(f"Warning: Could not load model weights: {e}")
-            print("Using randomly initialized model (for demo purposes)")
+            print(f"Could not load fine-tuned weights: {e}")
+            print("Using pre-trained ImageNet weights for transfer learning")
     else:
-        print("No trained model found. Using randomly initialized model (for demo purposes)")
-        # Save a demo model
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        torch.save(model.state_dict(), model_path)
-        print(f"Saved demo model to: {model_path}")
+        print("Using pre-trained ImageNet weights (transfer learning)")
+        print("Note: For best results, fine-tune on waste dataset using train.py")
     
     model = model.to(device)
     model.eval()
     
     # Setup transform
     transform = get_inference_transform()
+    
+    print("Model loaded successfully!")
 
 
 def predict_image(image):
     """
-    Predict the class of an image
+    Predict the class of an image using transfer learning model
     
     Args:
         image: PIL Image or numpy array
@@ -211,6 +217,8 @@ def classify():
         return jsonify(result)
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

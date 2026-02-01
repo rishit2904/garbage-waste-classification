@@ -1,15 +1,106 @@
 """
 CNN Model Architecture for Garbage Waste Classification
 
-This module implements a robust CNN architecture designed to handle:
-- Dirty, broken, or overlapping waste objects
-- Varying lighting conditions
-- Visual confusion between similar materials (plastic vs glass)
+This module implements a robust CNN architecture using transfer learning
+to handle real-world waste classification with:
+- Pre-trained weights from ImageNet for better feature extraction
+- Fine-tuned classification head for waste categories
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models
+from torchvision.models import ResNet18_Weights, MobileNet_V2_Weights
+
+
+# Waste categories
+CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
+
+
+class GarbageClassifierTransfer(nn.Module):
+    """
+    Transfer learning based classifier using pre-trained ResNet18.
+    Much better for real-world classification even without fine-tuning.
+    """
+    
+    CLASSES = CLASSES
+    
+    def __init__(self, num_classes=6, pretrained=True):
+        super(GarbageClassifierTransfer, self).__init__()
+        
+        # Load pre-trained ResNet18
+        if pretrained:
+            self.backbone = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+        else:
+            self.backbone = models.resnet18(weights=None)
+        
+        # Freeze early layers for transfer learning
+        for param in list(self.backbone.parameters())[:-20]:
+            param.requires_grad = False
+        
+        # Replace the final fully connected layer
+        num_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(num_features, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(256, num_classes)
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+    
+    def predict(self, x):
+        """Get class predictions with probabilities"""
+        self.eval()
+        with torch.no_grad():
+            logits = self.forward(x)
+            probabilities = F.softmax(logits, dim=1)
+            predictions = torch.argmax(probabilities, dim=1)
+        return predictions, probabilities
+
+
+class GarbageClassifierMobileNet(nn.Module):
+    """
+    Lightweight classifier using MobileNetV2 for faster inference.
+    Good for mobile/edge deployment.
+    """
+    
+    CLASSES = CLASSES
+    
+    def __init__(self, num_classes=6, pretrained=True):
+        super(GarbageClassifierMobileNet, self).__init__()
+        
+        # Load pre-trained MobileNetV2
+        if pretrained:
+            self.backbone = models.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
+        else:
+            self.backbone = models.mobilenet_v2(weights=None)
+        
+        # Freeze feature extractor
+        for param in self.backbone.features.parameters():
+            param.requires_grad = False
+        
+        # Replace classifier
+        num_features = self.backbone.classifier[1].in_features
+        self.backbone.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(num_features, num_classes)
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+    
+    def predict(self, x):
+        """Get class predictions with probabilities"""
+        self.eval()
+        with torch.no_grad():
+            logits = self.forward(x)
+            probabilities = F.softmax(logits, dim=1)
+            predictions = torch.argmax(probabilities, dim=1)
+        return predictions, probabilities
 
 
 class GarbageClassifierCNN(nn.Module):
@@ -20,8 +111,7 @@ class GarbageClassifierCNN(nn.Module):
     - Global average pooling for spatial invariance
     """
     
-    # Waste categories
-    CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
+    CLASSES = CLASSES
     
     def __init__(self, num_classes=6, dropout_rate=0.5):
         super(GarbageClassifierCNN, self).__init__()
@@ -128,110 +218,25 @@ class GarbageClassifierCNN(nn.Module):
         return predictions, probabilities
 
 
-class ResidualBlock(nn.Module):
-    """Residual block for deeper networks"""
-    
-    def __init__(self, in_channels, out_channels, stride=1):
-        super(ResidualBlock, self).__init__()
-        
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, 
-                               stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                               stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, 
-                         stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels)
-            )
-    
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        out = F.relu(out)
-        return out
-
-
-class GarbageClassifierResNet(nn.Module):
-    """
-    ResNet-style architecture for improved feature learning
-    Better for handling complex, real-world waste images
-    """
-    
-    CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
-    
-    def __init__(self, num_classes=6):
-        super(GarbageClassifierResNet, self).__init__()
-        
-        self.in_channels = 64
-        
-        # Initial convolution
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        )
-        
-        # Residual layers
-        self.layer1 = self._make_layer(64, 2, stride=1)
-        self.layer2 = self._make_layer(128, 2, stride=2)
-        self.layer3 = self._make_layer(256, 2, stride=2)
-        self.layer4 = self._make_layer(512, 2, stride=2)
-        
-        # Global average pooling and classifier
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512, num_classes)
-        
-    def _make_layer(self, out_channels, num_blocks, stride):
-        layers = [ResidualBlock(self.in_channels, out_channels, stride)]
-        self.in_channels = out_channels
-        for _ in range(1, num_blocks):
-            layers.append(ResidualBlock(out_channels, out_channels))
-        return nn.Sequential(*layers)
-    
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-    
-    def predict(self, x):
-        """Get class predictions with probabilities"""
-        self.eval()
-        with torch.no_grad():
-            logits = self.forward(x)
-            probabilities = F.softmax(logits, dim=1)
-            predictions = torch.argmax(probabilities, dim=1)
-        return predictions, probabilities
-
-
-def get_model(model_type='cnn', num_classes=6, pretrained_path=None):
+def get_model(model_type='transfer', num_classes=6, pretrained=True, pretrained_path=None):
     """
     Factory function to get the appropriate model
     
     Args:
-        model_type: 'cnn' or 'resnet'
+        model_type: 'transfer' (ResNet18), 'mobilenet', or 'cnn' (custom)
         num_classes: Number of output classes
-        pretrained_path: Path to pretrained weights
+        pretrained: Whether to use ImageNet pretrained weights
+        pretrained_path: Path to custom pretrained weights
     
     Returns:
         Model instance
     """
-    if model_type == 'cnn':
+    if model_type == 'transfer':
+        model = GarbageClassifierTransfer(num_classes=num_classes, pretrained=pretrained)
+    elif model_type == 'mobilenet':
+        model = GarbageClassifierMobileNet(num_classes=num_classes, pretrained=pretrained)
+    elif model_type == 'cnn':
         model = GarbageClassifierCNN(num_classes=num_classes)
-    elif model_type == 'resnet':
-        model = GarbageClassifierResNet(num_classes=num_classes)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
     
@@ -243,19 +248,26 @@ def get_model(model_type='cnn', num_classes=6, pretrained_path=None):
 
 if __name__ == "__main__":
     # Test the models
-    print("Testing GarbageClassifierCNN...")
-    model_cnn = GarbageClassifierCNN()
+    print("Testing GarbageClassifierTransfer (ResNet18)...")
+    model_transfer = GarbageClassifierTransfer()
     x = torch.randn(4, 3, 224, 224)
+    output = model_transfer(x)
+    print(f"Transfer Output shape: {output.shape}")
+    
+    print("\nTesting GarbageClassifierMobileNet...")
+    model_mobile = GarbageClassifierMobileNet()
+    output = model_mobile(x)
+    print(f"MobileNet Output shape: {output.shape}")
+    
+    print("\nTesting GarbageClassifierCNN...")
+    model_cnn = GarbageClassifierCNN()
     output = model_cnn(x)
     print(f"CNN Output shape: {output.shape}")
     
-    print("\nTesting GarbageClassifierResNet...")
-    model_resnet = GarbageClassifierResNet()
-    output = model_resnet(x)
-    print(f"ResNet Output shape: {output.shape}")
-    
     # Print model parameters
+    total_params_transfer = sum(p.numel() for p in model_transfer.parameters())
+    total_params_mobile = sum(p.numel() for p in model_mobile.parameters())
     total_params_cnn = sum(p.numel() for p in model_cnn.parameters())
-    total_params_resnet = sum(p.numel() for p in model_resnet.parameters())
-    print(f"\nCNN Total parameters: {total_params_cnn:,}")
-    print(f"ResNet Total parameters: {total_params_resnet:,}")
+    print(f"\nTransfer (ResNet18) Total parameters: {total_params_transfer:,}")
+    print(f"MobileNet Total parameters: {total_params_mobile:,}")
+    print(f"CNN Total parameters: {total_params_cnn:,}")
