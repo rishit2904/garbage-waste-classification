@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garbage Waste Classifier | AI-Powered Recycling</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="background-gradient"></div>
+    
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">♻️</span>
+                <h1>Waste<span class="highlight">Classify</span></h1>
+            </div>
+            <p class="tagline">AI-Powered Waste Classification for Smarter Recycling</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-container" id="dropZone">
+                    <div class="upload-content">
+                        <div class="upload-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <h3>Drop your image here</h3>
+                        <p>or click to browse</p>
+                        <span class="file-types">Supports: JPG, PNG, WEBP</span>
+                    </div>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </div>
+
+                <!-- Preview Image -->
+                <div class="preview-container" id="previewContainer">
+                    <img id="previewImage" src="" alt="Preview">
+                    <button class="clear-btn" id="clearBtn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Classify Button -->
+                <button class="classify-btn" id="classifyBtn" disabled>
+                    <span class="btn-text">Classify Waste</span>
+                    <span class="btn-loader"></span>
+                </button>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection">
+                <div class="result-card">
+                    <div class="result-header">
+                        <span class="result-icon" id="resultIcon">🗑️</span>
+                        <div class="result-info">
+                            <h2 id="resultClass">--</h2>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" id="confidenceFill"></div>
+                            </div>
+                            <span class="confidence-text" id="confidenceText">0% confidence</span>
+                        </div>
+                    </div>
+                    
+                    <div class="recyclable-badge" id="recyclableBadge">
+                        <span class="badge-icon">♻️</span>
+                        <span class="badge-text">Recyclable</span>
+                    </div>
+
+                    <div class="tips-box" id="tipsBox">
+                        <h4>💡 Recycling Tips</h4>
+                        <p id="tipsText">--</p>
+                    </div>
+
+                    <!-- Probability Distribution -->
+                    <div class="probabilities">
+                        <h4>Classification Probabilities</h4>
+                        <div class="prob-bars" id="probBars"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Categories Grid -->
+        <section class="categories-section">
+            <h2>Waste Categories</h2>
+            <div class="categories-grid">
+                <div class="category-card" data-category="cardboard">
+                    <span class="cat-icon">📦</span>
+                    <span class="cat-name">Cardboard</span>
+                </div>
+                <div class="category-card" data-category="glass">
+                    <span class="cat-icon">🍾</span>
+                    <span class="cat-name">Glass</span>
+                </div>
+                <div class="category-card" data-category="metal">
+                    <span class="cat-icon">🥫</span>
+                    <span class="cat-name">Metal</span>
+                </div>
+                <div class="category-card" data-category="paper">
+                    <span class="cat-icon">📄</span>
+                    <span class="cat-name">Paper</span>
+                </div>
+                <div class="category-card" data-category="plastic">
+                    <span class="cat-icon">🧴</span>
+                    <span class="cat-name">Plastic</span>
+                </div>
+                <div class="category-card" data-category="trash">
+                    <span class="cat-icon">🗑️</span>
+                    <span class="cat-name">Trash</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>🌍 Powered by Deep Learning | Built for a Sustainable Future</p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const clearBtn = document.getElementById('clearBtn');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const resultsSection = document.getElementById('resultsSection');
+
+        let currentFile = null;
+
+        // Event Listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleFile(file);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        });
+
+        clearBtn.addEventListener('click', clearImage);
+        classifyBtn.addEventListener('click', classifyImage);
+
+        // Handle file selection
+        function handleFile(file) {
+            currentFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.classList.add('visible');
+                dropZone.classList.add('has-image');
+                classifyBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Clear image
+        function clearImage() {
+            currentFile = null;
+            previewImage.src = '';
+            previewContainer.classList.remove('visible');
+            dropZone.classList.remove('has-image');
+            classifyBtn.disabled = true;
+            resultsSection.classList.remove('visible');
+        }
+
+        // Classify image
+        async function classifyImage() {
+            if (!currentFile) return;
+
+            classifyBtn.classList.add('loading');
+            classifyBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', currentFile);
+
+                const response = await fetch('/classify', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                displayResults(result);
+            } catch (error) {
+                console.error('Classification error:', error);
+                alert('Classification failed: ' + error.message);
+            } finally {
+                classifyBtn.classList.remove('loading');
+                classifyBtn.disabled = false;
+            }
+        }
+
+        // Display results
+        function displayResults(result) {
+            // Update main result
+            document.getElementById('resultIcon').textContent = result.icon;
+            document.getElementById('resultClass').textContent = 
+                result.class.charAt(0).toUpperCase() + result.class.slice(1);
+            
+            // Update confidence
+            const confidence = (result.confidence * 100).toFixed(1);
+            document.getElementById('confidenceFill').style.width = `${confidence}%`;
+            document.getElementById('confidenceFill').style.backgroundColor = result.color;
+            document.getElementById('confidenceText').textContent = `${confidence}% confidence`;
+
+            // Update recyclable badge
+            const badge = document.getElementById('recyclableBadge');
+            if (result.recyclable) {
+                badge.classList.remove('not-recyclable');
+                badge.innerHTML = '<span class="badge-icon">♻️</span><span class="badge-text">Recyclable</span>';
+            } else {
+                badge.classList.add('not-recyclable');
+                badge.innerHTML = '<span class="badge-icon">⚠️</span><span class="badge-text">Not Recyclable</span>';
+            }
+
+            // Update tips
+            document.getElementById('tipsText').textContent = result.tips;
+
+            // Update probability bars
+            const probBars = document.getElementById('probBars');
+            probBars.innerHTML = '';
+            
+            const sortedProbs = Object.entries(result.all_probabilities)
+                .sort((a, b) => b[1] - a[1]);
+            
+            sortedProbs.forEach(([className, prob]) => {
+                const percentage = (prob * 100).toFixed(1);
+                const isActive = className === result.class;
+                
+                const bar = document.createElement('div');
+                bar.className = `prob-bar ${isActive ? 'active' : ''}`;
+                bar.innerHTML = `
+                    <span class="prob-label">${className}</span>
+                    <div class="prob-track">
+                        <div class="prob-fill" style="width: ${percentage}%"></div>
+                    </div>
+                    <span class="prob-value">${percentage}%</span>
+                `;
+                probBars.appendChild(bar);
+            });
+
+            // Highlight category
+            document.querySelectorAll('.category-card').forEach(card => {
+                card.classList.remove('active');
+                if (card.dataset.category === result.class) {
+                    card.classList.add('active');
+                }
+            });
+
+            // Show results
+            resultsSection.classList.add('visible');
+        }
+    </script>
+</body>
+</html>
