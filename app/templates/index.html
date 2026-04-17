@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Garbage Waste Classifier | AI-Powered Recycling</title>
+    <meta name="description" content="AI-powered waste classification system using deep learning. Classify waste into recyclable categories with drag-and-drop image upload.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -11,12 +12,18 @@
 </head>
 <body>
     <div class="background-gradient"></div>
-    
+
     <div class="container">
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <span class="logo-icon">♻️</span>
+                <span class="logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                </span>
                 <h1>Waste<span class="highlight">Classify</span></h1>
             </div>
             <p class="tagline">AI-Powered Waste Classification for Smarter Recycling</p>
@@ -64,7 +71,7 @@
             <section class="results-section" id="resultsSection">
                 <div class="result-card">
                     <div class="result-header">
-                        <span class="result-icon" id="resultIcon">🗑️</span>
+                        <span class="result-icon" id="resultIcon">--</span>
                         <div class="result-info">
                             <h2 id="resultClass">--</h2>
                             <div class="confidence-bar">
@@ -73,14 +80,14 @@
                             <span class="confidence-text" id="confidenceText">0% confidence</span>
                         </div>
                     </div>
-                    
+
                     <div class="recyclable-badge" id="recyclableBadge">
-                        <span class="badge-icon">♻️</span>
+                        <span class="badge-icon">&#x2713;</span>
                         <span class="badge-text">Recyclable</span>
                     </div>
 
                     <div class="tips-box" id="tipsBox">
-                        <h4>💡 Recycling Tips</h4>
+                        <h4>Recycling Tips</h4>
                         <p id="tipsText">--</p>
                     </div>
 
@@ -98,27 +105,27 @@
             <h2>Waste Categories</h2>
             <div class="categories-grid">
                 <div class="category-card" data-category="cardboard">
-                    <span class="cat-icon">📦</span>
+                    <span class="cat-icon cardboard-icon">CB</span>
                     <span class="cat-name">Cardboard</span>
                 </div>
                 <div class="category-card" data-category="glass">
-                    <span class="cat-icon">🍾</span>
+                    <span class="cat-icon glass-icon">GL</span>
                     <span class="cat-name">Glass</span>
                 </div>
                 <div class="category-card" data-category="metal">
-                    <span class="cat-icon">🥫</span>
+                    <span class="cat-icon metal-icon">MT</span>
                     <span class="cat-name">Metal</span>
                 </div>
                 <div class="category-card" data-category="paper">
-                    <span class="cat-icon">📄</span>
+                    <span class="cat-icon paper-icon">PP</span>
                     <span class="cat-name">Paper</span>
                 </div>
                 <div class="category-card" data-category="plastic">
-                    <span class="cat-icon">🧴</span>
+                    <span class="cat-icon plastic-icon">PL</span>
                     <span class="cat-name">Plastic</span>
                 </div>
                 <div class="category-card" data-category="trash">
-                    <span class="cat-icon">🗑️</span>
+                    <span class="cat-icon trash-icon">TR</span>
                     <span class="cat-name">Trash</span>
                 </div>
             </div>
@@ -126,7 +133,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>🌍 Powered by Deep Learning | Built for a Sustainable Future</p>
+            <p>Powered by Deep Learning | Built for a Sustainable Future</p>
         </footer>
     </div>
 
@@ -140,11 +147,21 @@
         const classifyBtn = document.getElementById('classifyBtn');
         const resultsSection = document.getElementById('resultsSection');
 
+        // Category icon abbreviations map
+        const CATEGORY_LABELS = {
+            'cardboard': 'CB',
+            'glass': 'GL',
+            'metal': 'MT',
+            'paper': 'PP',
+            'plastic': 'PL',
+            'trash': 'TR'
+        };
+
         let currentFile = null;
 
         // Event Listeners
         dropZone.addEventListener('click', () => fileInput.click());
-        
+
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('drag-over');
@@ -230,11 +247,12 @@
 
         // Display results
         function displayResults(result) {
-            // Update main result
-            document.getElementById('resultIcon').textContent = result.icon;
-            document.getElementById('resultClass').textContent = 
+            // Update main result icon with text abbreviation
+            const label = CATEGORY_LABELS[result.class] || '--';
+            document.getElementById('resultIcon').textContent = label;
+            document.getElementById('resultClass').textContent =
                 result.class.charAt(0).toUpperCase() + result.class.slice(1);
-            
+
             // Update confidence
             const confidence = (result.confidence * 100).toFixed(1);
             document.getElementById('confidenceFill').style.width = `${confidence}%`;
@@ -245,10 +263,10 @@
             const badge = document.getElementById('recyclableBadge');
             if (result.recyclable) {
                 badge.classList.remove('not-recyclable');
-                badge.innerHTML = '<span class="badge-icon">♻️</span><span class="badge-text">Recyclable</span>';
+                badge.innerHTML = '<span class="badge-icon">&#x2713;</span><span class="badge-text">Recyclable</span>';
             } else {
                 badge.classList.add('not-recyclable');
-                badge.innerHTML = '<span class="badge-icon">⚠️</span><span class="badge-text">Not Recyclable</span>';
+                badge.innerHTML = '<span class="badge-icon">&#x2717;</span><span class="badge-text">Not Recyclable</span>';
             }
 
             // Update tips
@@ -257,14 +275,14 @@
             // Update probability bars
             const probBars = document.getElementById('probBars');
             probBars.innerHTML = '';
-            
+
             const sortedProbs = Object.entries(result.all_probabilities)
                 .sort((a, b) => b[1] - a[1]);
-            
+
             sortedProbs.forEach(([className, prob]) => {
                 const percentage = (prob * 100).toFixed(1);
                 const isActive = className === result.class;
-                
+
                 const bar = document.createElement('div');
                 bar.className = `prob-bar ${isActive ? 'active' : ''}`;
                 bar.innerHTML = `

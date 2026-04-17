@@ -1,4 +1,4 @@
-# 🗑️ Garbage Waste Classification for Recycling
+# Garbage Waste Classification for Recycling
 
 AI-powered waste classification system using Convolutional Neural Networks (CNNs) with heavy data augmentation to handle real-world conditions.
 
@@ -16,11 +16,13 @@ Train CNNs with heavy augmentation and real-world cluttered images to improve ro
 
 ## Features
 
-✅ **Custom CNN Architecture** - Deep network with batch normalization and dropout  
-✅ **Heavy Data Augmentation** - Handles dirty, broken, overlapping objects  
-✅ **Modern Web Interface** - Drag-and-drop image upload  
-✅ **6 Waste Categories** - Cardboard, Glass, Metal, Paper, Plastic, Trash  
-✅ **Recycling Tips** - Guidance for proper waste disposal  
+- **Custom CNN Architecture** - Deep network with batch normalization and dropout
+- **Heavy Data Augmentation** - Handles dirty, broken, overlapping objects
+- **Modern Web Interface** - Drag-and-drop image upload
+- **6 Waste Categories** - Cardboard, Glass, Metal, Paper, Plastic, Trash
+- **Recycling Tips** - Guidance for proper waste disposal
+- **Training Diagnostics** - Per-epoch logging, precision/recall/F1 metrics
+- **Best Model Checkpointing** - Automatic checkpoint on validation loss improvement
 
 ## Quick Start
 
@@ -38,19 +40,19 @@ cd app
 python app.py
 ```
 
-Then open **http://localhost:5000** in your browser.
+Then open **http://localhost:5001** in your browser.
 
 ### 3. (Optional) Train with Your Data
 
 Organize your images in this structure:
 ```
 data/
-├── cardboard/
-├── glass/
-├── metal/
-├── paper/
-├── plastic/
-└── trash/
+  cardboard/
+  glass/
+  metal/
+  paper/
+  plastic/
+  trash/
 ```
 
 Then run:
@@ -63,20 +65,21 @@ python train.py --data-dir ../data --epochs 50
 
 ```
 DL MINI/
-├── app/
-│   ├── app.py              # Flask server
-│   ├── templates/
-│   │   └── index.html      # Web interface
-│   └── static/
-│       └── style.css       # Styling
-├── model/
-│   ├── cnn_model.py        # CNN architecture
-│   ├── train.py            # Training pipeline
-│   └── augmentation.py     # Data augmentation
-├── saved_models/           # Trained models
-├── data/                   # Training dataset
-├── requirements.txt        # Dependencies
-└── README.md
+  app/
+    app.py              # Flask server
+    templates/
+      index.html        # Web interface
+    static/
+      style.css         # Styling
+  model/
+    cnn_model.py        # CNN architecture
+    train.py            # Training pipeline
+    augmentation.py     # Data augmentation
+  saved_models/         # Trained models
+  checkpoints/          # Best model checkpoints
+  data/                 # Training dataset
+  requirements.txt      # Dependencies
+  README.md
 ```
 
 ## Technologies
@@ -85,17 +88,18 @@ DL MINI/
 - **Flask** - Web server
 - **Albumentations** - Advanced image augmentation
 - **PIL/OpenCV** - Image processing
+- **scikit-learn** - Metrics (precision, recall, F1)
 
 ## Waste Categories
 
-| Category | Icon | Recyclable |
-|----------|------|------------|
-| Cardboard | 📦 | ✅ Yes |
-| Glass | 🍾 | ✅ Yes |
-| Metal | 🥫 | ✅ Yes |
-| Paper | 📄 | ✅ Yes |
-| Plastic | 🧴 | ✅ Yes |
-| Trash | 🗑️ | ❌ No |
+| Category  | Code | Recyclable |
+|-----------|------|------------|
+| Cardboard | CB   | Yes        |
+| Glass     | GL   | Yes        |
+| Metal     | MT   | Yes        |
+| Paper     | PP   | Yes        |
+| Plastic   | PL   | Yes        |
+| Trash     | TR   | No         |
 
 ## API Endpoints
 
@@ -106,4 +110,4 @@ DL MINI/
 
 ---
 
-🌍 Built for a Sustainable Future
+Built for a Sustainable Future

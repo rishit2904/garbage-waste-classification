@@ -5,7 +5,7 @@ Features:
 - Drag-and-drop image upload
 - Real-time classification with confidence scores
 - Transfer learning with pre-trained ResNet18
-- Beautiful, modern UI
+- Clean, modern UI
 - REST API endpoint
 """
 
@@ -41,41 +41,41 @@ model = None
 device = None
 transform = None
 
-# Class info for recycling tips
+# Class info for recycling tips - no emojis, using text labels
 CLASS_INFO = {
     'cardboard': {
-        'icon': '📦',
-        'color': '#8B4513',
+        'icon': 'CB',
+        'color': '#92400E',
         'recyclable': True,
         'tips': 'Flatten boxes and remove tape/labels. Keep dry.'
     },
     'glass': {
-        'icon': '🍾',
-        'color': '#4169E1',
+        'icon': 'GL',
+        'color': '#1D4ED8',
         'recyclable': True,
         'tips': 'Rinse containers. Separate by color if required locally.'
     },
     'metal': {
-        'icon': '🥫',
-        'color': '#708090',
+        'icon': 'MT',
+        'color': '#475569',
         'recyclable': True,
         'tips': 'Rinse cans. Aluminum and steel are both recyclable.'
     },
     'paper': {
-        'icon': '📄',
-        'color': '#F4A460',
+        'icon': 'PP',
+        'color': '#B45309',
         'recyclable': True,
         'tips': 'Keep clean and dry. No greasy or wet paper.'
     },
     'plastic': {
-        'icon': '🧴',
-        'color': '#20B2AA',
+        'icon': 'PL',
+        'color': '#0F766E',
         'recyclable': True,
         'tips': 'Check recycling number. Rinse containers.'
     },
     'trash': {
-        'icon': '🗑️',
-        'color': '#2F4F4F',
+        'icon': 'TR',
+        'color': '#374151',
         'recyclable': False,
         'tips': 'General waste. Cannot be recycled - goes to landfill.'
     }
@@ -85,7 +85,7 @@ CLASS_INFO = {
 def load_model():
     """Load the trained model with transfer learning"""
     global model, device, transform
-    
+
     # Setup device
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -93,17 +93,30 @@ def load_model():
         device = torch.device('mps')
     else:
         device = torch.device('cpu')
-    
+
     print(f"Using device: {device}")
-    
+
     # Load model with transfer learning (pre-trained ResNet18)
     # This gives meaningful predictions even without waste-specific training
     print("Loading pre-trained ResNet18 model with transfer learning...")
     model = get_model('transfer', pretrained=True)
-    
-    # Check for fine-tuned weights
+
+    # Check for best checkpoint first, then fine-tuned weights
+    checkpoint_path = os.path.join(os.path.dirname(__file__), '..', 'checkpoints', 'best_model', 'model.pth')
     model_path = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'garbage_classifier_finetuned.pth')
-    if os.path.exists(model_path):
+
+    if os.path.exists(checkpoint_path):
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                model.load_state_dict(checkpoint)
+            print(f"Loaded best checkpoint from: {checkpoint_path}")
+        except Exception as e:
+            print(f"Could not load checkpoint: {e}")
+            print("Falling back to other weights...")
+    elif os.path.exists(model_path):
         try:
             model.load_state_dict(torch.load(model_path, map_location=device))
             print(f"Loaded fine-tuned weights from: {model_path}")
@@ -113,50 +126,50 @@ def load_model():
     else:
         print("Using pre-trained ImageNet weights (transfer learning)")
         print("Note: For best results, fine-tune on waste dataset using train.py")
-    
+
     model = model.to(device)
     model.eval()
-    
+
     # Setup transform
     transform = get_inference_transform()
-    
+
     print("Model loaded successfully!")
 
 
 def predict_image(image):
     """
     Predict the class of an image using transfer learning model
-    
+
     Args:
         image: PIL Image or numpy array
-    
+
     Returns:
         Dictionary with prediction results
     """
     global model, device, transform
-    
+
     # Convert to numpy if PIL Image
     if isinstance(image, Image.Image):
         image = np.array(image.convert('RGB'))
-    
+
     # Apply transform
     transformed = transform(image=image)
     input_tensor = transformed['image'].unsqueeze(0).to(device)
-    
+
     # Get prediction
     with torch.no_grad():
         outputs = model(input_tensor)
         probabilities = torch.softmax(outputs, dim=1)[0]
         predicted_class = torch.argmax(probabilities).item()
         confidence = probabilities[predicted_class].item()
-    
+
     # Get all class probabilities
     all_probs = {CLASSES[i]: float(probabilities[i]) for i in range(len(CLASSES))}
-    
+
     # Get class info
     class_name = CLASSES[predicted_class]
     info = CLASS_INFO[class_name]
-    
+
     return {
         'class': class_name,
         'confidence': confidence,
@@ -178,23 +191,23 @@ def index():
 def classify():
     """
     API endpoint for image classification
-    
+
     Accepts:
         - File upload (multipart/form-data)
         - Base64 encoded image (JSON)
-    
+
     Returns:
         JSON with classification results
     """
     try:
         image = None
-        
+
         # Check for file upload
         if 'file' in request.files:
             file = request.files['file']
             if file.filename:
                 image = Image.open(file).convert('RGB')
-        
+
         # Check for base64 image
         elif request.is_json:
             data = request.get_json()
@@ -203,19 +216,19 @@ def classify():
                 image_data = data['image']
                 if ',' in image_data:
                     image_data = image_data.split(',')[1]
-                
+
                 # Decode base64
                 image_bytes = base64.b64decode(image_data)
                 image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        
+
         if image is None:
             return jsonify({'error': 'No image provided'}), 400
-        
+
         # Get prediction
         result = predict_image(image)
-        
+
         return jsonify(result)
-    
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -244,9 +257,9 @@ with app.app_context():
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("🗑️  Garbage Waste Classification System")
+    print("  Garbage Waste Classification System")
     print("="*50)
     print("\nStarting server...")
     print("Open http://localhost:5001 in your browser\n")
-    
+
     app.run(host='0.0.0.0', port=5001, debug=True)
