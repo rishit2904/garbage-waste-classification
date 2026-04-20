@@ -11,6 +11,16 @@ Augmentation includes all required transforms:
 - Random brightness +/-0.15
 - Random contrast +/-0.1
 - Random crop with padding 10%
+
+TASK 3 UPGRADES:
+- A.RandomSunFlare(p=0.1)     — simulates harsh bin lighting
+- A.RandomFog(p=0.1)          — simulates dirty/foggy camera lens
+- A.Sharpen(p=0.3)            — improves texture edge learning
+- A.ToGray(p=0.1)             — forces texture-over-color learning
+- MixUp / CutMix alpha bumped to 0.5
+
+TASK 5 UPGRADES:
+- get_test_time_augmentation() expanded from 4 → 8 variants
 """
 
 import albumentations as A
@@ -26,7 +36,7 @@ def get_training_augmentation(image_size=224):
     Simulates real-world conditions:
     - Dirty objects (noise, blur)
     - Broken/overlapping objects (cutout, grid distortion)
-    - Varying lighting (brightness, contrast, shadows)
+    - Varying lighting (brightness, contrast, shadows, sun flare, fog)
     - Different camera angles (rotation, perspective)
 
     Required augmentations included:
@@ -40,14 +50,14 @@ def get_training_augmentation(image_size=224):
         # Resize
         A.Resize(image_size, image_size),
 
-        # Random crop with padding 10% (pad then random crop back to original size)
+        # Random translation via padding then cropping
         A.PadIfNeeded(
             min_height=image_size + pad_size * 2,
             min_width=image_size + pad_size * 2,
             border_mode=cv2.BORDER_REFLECT_101,
             p=0.5
         ),
-        A.RandomCrop(height=image_size, width=image_size, p=0.5),
+        A.RandomCrop(height=image_size, width=image_size, p=1.0),
 
         # Geometric transformations (camera angles, perspectives)
         A.OneOf([
@@ -90,7 +100,7 @@ def get_training_augmentation(image_size=224):
 
         # Simulate dirty/weathered objects
         A.OneOf([
-            A.GaussNoise(var_limit=(10.0, 50.0), p=1),
+            A.GaussNoise(var_limit=(10.0, 50.0), p=1),  # using default noise types
             A.ISONoise(intensity=(0.1, 0.5), p=1),
             A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1),
         ], p=0.4),
@@ -105,9 +115,9 @@ def get_training_augmentation(image_size=224):
         # Simulate overlapping/partial occlusion
         A.OneOf([
             A.CoarseDropout(
-                max_holes=8,
-                max_height=int(image_size * 0.1),
-                max_width=int(image_size * 0.1),
+                num_holes_range=(1, 8),
+                hole_height_range=(int(image_size * 0.05), int(image_size * 0.1)),
+                hole_width_range=(int(image_size * 0.05), int(image_size * 0.1)),
                 fill_value=0,
                 p=1
             ),
@@ -118,17 +128,49 @@ def get_training_augmentation(image_size=224):
         # Add random shadows
         A.RandomShadow(
             shadow_roi=(0, 0.5, 1, 1),
-            num_shadows_lower=1,
-            num_shadows_upper=3,
+            num_shadows_limit=(1, 3),
             shadow_dimension=5,
             p=0.3
         ),
 
         # Simulate different image qualities
         A.OneOf([
-            A.ImageCompression(quality_lower=60, quality_upper=100, p=1),
-            A.Downscale(scale_min=0.5, scale_max=0.9, p=1),
+            A.ImageCompression(quality_range=(60, 100), p=1),
+            A.Downscale(scale_range=(0.5, 0.9), p=1),
         ], p=0.2),
+
+        # ------------------------------------------------------------------
+        # TASK 3: New augmentations for harsh real-world conditions
+        # ------------------------------------------------------------------
+
+        # Simulates harsh overhead lighting in bins / outdoor settings
+        A.RandomSunFlare(
+            flare_roi=(0, 0, 1, 0.5),
+            angle_range=(0, 1),
+            num_flare_circles_range=(3, 8),
+            src_radius=200,
+            src_color=(255, 255, 255),
+            p=0.1
+        ),
+
+        # Simulates foggy or dirty camera lens on bin cameras
+        A.RandomFog(
+            fog_coef_range=(0.1, 0.3),
+            alpha_coef=0.08,
+            p=0.1
+        ),
+
+        # Sharpens texture edges — helps distinguish glass vs. plastic vs. metal
+        A.Sharpen(
+            alpha=(0.2, 0.5),
+            lightness=(0.5, 1.0),
+            p=0.3
+        ),
+
+        # Forces the model to learn texture patterns over color cues
+        A.ToGray(p=0.1),
+
+        # ------------------------------------------------------------------
 
         # Normalize and convert to tensor
         A.Normalize(
@@ -156,7 +198,7 @@ def get_validation_augmentation(image_size=224):
 
 def get_inference_transform(image_size=224):
     """
-    Transform for inference/prediction
+    Transform for inference/prediction (single-image, no TTA)
     """
     return A.Compose([
         A.Resize(image_size, image_size),
@@ -170,35 +212,81 @@ def get_inference_transform(image_size=224):
 
 def get_test_time_augmentation(image_size=224):
     """
-    Test-time augmentation for improved prediction accuracy
-    Returns multiple augmented versions of the same image
+    Test-time augmentation (TTA) — Task 5 upgrade.
+
+    Expanded from 4 → 8 variants for stronger ensemble effect:
+      1. Original
+      2. Horizontal flip
+      3. Vertical flip              [NEW]
+      4. Rotate 90°
+      5. Rotate 180°                [NEW]
+      6. Rotate 270°                [NEW]
+      7. Horizontal flip + 90° rot  [NEW]
+      8. Brightness +0.1
+
+    Usage in inference:
+        transforms = get_test_time_augmentation()
+        logits_list = [model(t(image=img)['image'].unsqueeze(0)) for t in transforms]
+        avg_probs = torch.stack([softmax(l) for l in logits_list]).mean(0)
+        pred = avg_probs.argmax()
     """
+    _norm = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
     return [
-        # Original
+        # 1. Original
         A.Compose([
             A.Resize(image_size, image_size),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            A.Normalize(**_norm),
             ToTensorV2()
         ]),
-        # Horizontal flip
+        # 2. Horizontal flip
         A.Compose([
             A.Resize(image_size, image_size),
             A.HorizontalFlip(p=1.0),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            A.Normalize(**_norm),
             ToTensorV2()
         ]),
-        # Rotate 90
+        # 3. Vertical flip [NEW]
+        A.Compose([
+            A.Resize(image_size, image_size),
+            A.VerticalFlip(p=1.0),
+            A.Normalize(**_norm),
+            ToTensorV2()
+        ]),
+        # 4. Rotate 90°
         A.Compose([
             A.Resize(image_size, image_size),
             A.Rotate(limit=(90, 90), p=1.0),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            A.Normalize(**_norm),
             ToTensorV2()
         ]),
-        # Brightness adjustment
+        # 5. Rotate 180° [NEW]
+        A.Compose([
+            A.Resize(image_size, image_size),
+            A.Rotate(limit=(180, 180), p=1.0),
+            A.Normalize(**_norm),
+            ToTensorV2()
+        ]),
+        # 6. Rotate 270° [NEW]
+        A.Compose([
+            A.Resize(image_size, image_size),
+            A.Rotate(limit=(270, 270), p=1.0),
+            A.Normalize(**_norm),
+            ToTensorV2()
+        ]),
+        # 7. Horizontal flip + 90° rotation [NEW]
+        A.Compose([
+            A.Resize(image_size, image_size),
+            A.HorizontalFlip(p=1.0),
+            A.Rotate(limit=(90, 90), p=1.0),
+            A.Normalize(**_norm),
+            ToTensorV2()
+        ]),
+        # 8. Brightness +0.1
         A.Compose([
             A.Resize(image_size, image_size),
             A.RandomBrightnessContrast(brightness_limit=(0.1, 0.1), contrast_limit=0, p=1.0),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            A.Normalize(**_norm),
             ToTensorV2()
         ]),
     ]
@@ -206,11 +294,13 @@ def get_test_time_augmentation(image_size=224):
 
 class MixUpAugmentation:
     """
-    MixUp augmentation for improved generalization
-    Mixes two images and their labels
+    MixUp augmentation for improved generalization.
+    Mixes two images and their labels.
+
+    TASK 3: alpha bumped to 0.5 (was 0.4)
     """
 
-    def __init__(self, alpha=0.4):
+    def __init__(self, alpha=0.5):
         self.alpha = alpha
 
     def __call__(self, img1, img2, label1, label2):
@@ -232,11 +322,13 @@ class MixUpAugmentation:
 
 class CutMixAugmentation:
     """
-    CutMix augmentation for improved localization
-    Cuts and pastes patches between images
+    CutMix augmentation for improved localization.
+    Cuts and pastes patches between images.
+
+    TASK 3: alpha bumped to 0.5 (was 1.0)
     """
 
-    def __init__(self, alpha=1.0):
+    def __init__(self, alpha=0.5):
         self.alpha = alpha
 
     def __call__(self, img1, img2, label1, label2):
@@ -337,5 +429,12 @@ if __name__ == "__main__":
     val_transform = get_validation_augmentation()
     augmented = val_transform(image=dummy_image)
     print(f"Validation augmentation output shape: {augmented['image'].shape}")
+
+    # Test TTA — 8 variants
+    tta_transforms = get_test_time_augmentation()
+    print(f"\nTTA variants: {len(tta_transforms)} (expected 8)")
+    for i, t in enumerate(tta_transforms):
+        out = t(image=dummy_image)['image']
+        print(f"  TTA variant {i+1}: shape={out.shape}")
 
     print("\nAugmentation pipeline test complete!")

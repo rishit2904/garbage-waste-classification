@@ -4,9 +4,13 @@ Flask Web Application for Garbage Waste Classification
 Features:
 - Drag-and-drop image upload
 - Real-time classification with confidence scores
-- Transfer learning with pre-trained ResNet18
+- EfficientNet-B2 backbone (upgraded from ResNet18)
+- 8-variant Test-Time Augmentation (TTA) at inference
 - Clean, modern UI
 - REST API endpoint
+
+Task 5 upgrade: TTA averages softmax across 8 image variants
+Task 1 upgrade: loads EfficientNet-B2 model type
 """
 
 import os
@@ -27,7 +31,7 @@ import base64
 # Add model directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model'))
 from cnn_model import get_model, CLASSES
-from augmentation import get_inference_transform
+from augmentation import get_inference_transform, get_test_time_augmentation
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -83,68 +87,61 @@ CLASS_INFO = {
 
 
 def load_model():
-    """Load the trained model with transfer learning"""
     global model, device, transform
 
-    # Setup device
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    elif torch.backends.mps.is_available():
-        device = torch.device('mps')
-    else:
-        device = torch.device('cpu')
+    import os
+    import torch
+    import torch.nn.functional as F
 
-    print(f"Using device: {device}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load model with transfer learning (pre-trained ResNet18)
-    # This gives meaningful predictions even without waste-specific training
-    print("Loading pre-trained ResNet18 model with transfer learning...")
-    model = get_model('transfer', pretrained=True)
+    # Try multiple possible checkpoint locations
+    CHECKPOINT_CANDIDATES = [
+        "best_model.pth",
+        "models/best_model.pth",
+        "checkpoints/best_model.pth",
+        "resnet_best.pth",
+        "../saved_models/garbage_classifier.pth"
+    ]
 
-    # Check for best checkpoint first, then fine-tuned weights
-    checkpoint_path = os.path.join(os.path.dirname(__file__), '..', 'checkpoints', 'best_model', 'model.pth')
-    model_path = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'garbage_classifier_finetuned.pth')
-
-    if os.path.exists(checkpoint_path):
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location=device)
-            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                model.load_state_dict(checkpoint)
-            print(f"Loaded best checkpoint from: {checkpoint_path}")
-        except Exception as e:
-            print(f"Could not load checkpoint: {e}")
-            print("Falling back to other weights...")
-    elif os.path.exists(model_path):
-        try:
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            print(f"Loaded fine-tuned weights from: {model_path}")
-        except Exception as e:
-            print(f"Could not load fine-tuned weights: {e}")
-            print("Using pre-trained ImageNet weights for transfer learning")
-    else:
-        print("Using pre-trained ImageNet weights (transfer learning)")
-        print("Note: For best results, fine-tune on waste dataset using train.py")
-
+    model = get_model("efficientnet")  # keep whatever architecture name your code uses
     model = model.to(device)
     model.eval()
 
-    # Setup transform
-    transform = get_inference_transform()
+    loaded = False
+    for ckpt_path in CHECKPOINT_CANDIDATES:
+        if os.path.exists(ckpt_path):
+            checkpoint = torch.load(ckpt_path, map_location=device)
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+                print(f"[OK] Loaded checkpoint from {ckpt_path}, epoch={checkpoint.get('epoch','?')}, acc={checkpoint.get('best_acc','?')}")
+            else:
+                model.load_state_dict(checkpoint)
+                print(f"[OK] Loaded raw state dict from {ckpt_path}")
+            loaded = True
+            break
 
-    print("Model loaded successfully!")
+    if not loaded:
+        print("[FATAL] No checkpoint found. App is running on random weights.")
+        print(f"[FATAL] CWD = {os.getcwd()}")
+        print(f"[FATAL] Files = {os.listdir('.')}")
+
+    transform = get_test_time_augmentation()
 
 
 def predict_image(image):
     """
-    Predict the class of an image using transfer learning model
+    Predict the class of an image using EfficientNet-B2 with 8-variant TTA.
+
+    Task 5: Runs inference over 8 augmented views of the image
+    (original, hflip, vflip, 90°/180°/270° rot, hflip+90°, brightness+0.1)
+    and averages the softmax outputs before taking argmax.
 
     Args:
         image: PIL Image or numpy array
 
     Returns:
-        Dictionary with prediction results
+        Dictionary with prediction results (same keys as before)
     """
     global model, device, transform
 
@@ -152,19 +149,23 @@ def predict_image(image):
     if isinstance(image, Image.Image):
         image = np.array(image.convert('RGB'))
 
-    # Apply transform
-    transformed = transform(image=image)
-    input_tensor = transformed['image'].unsqueeze(0).to(device)
-
-    # Get prediction
+    # Task 5: 8-variant TTA — average softmax over all variants
     with torch.no_grad():
-        outputs = model(input_tensor)
-        probabilities = torch.softmax(outputs, dim=1)[0]
-        predicted_class = torch.argmax(probabilities).item()
-        confidence = probabilities[predicted_class].item()
+        all_probs_stack = []
+        for tta_transform in transform:
+            transformed = tta_transform(image=image)
+            input_tensor = transformed['image'].unsqueeze(0).to(device)
+            outputs = model(input_tensor)
+            probs = torch.softmax(outputs, dim=1)[0]  # shape [num_classes]
+            all_probs_stack.append(probs)
 
-    # Get all class probabilities
-    all_probs = {CLASSES[i]: float(probabilities[i]) for i in range(len(CLASSES))}
+        # Average across all 8 augmentation variants
+        avg_probs = torch.stack(all_probs_stack, dim=0).mean(dim=0)
+        predicted_class = torch.argmax(avg_probs).item()
+        confidence = avg_probs[predicted_class].item()
+
+    # Get all class probabilities from averaged output
+    all_probs = {CLASSES[i]: float(avg_probs[i]) for i in range(len(CLASSES))}
 
     # Get class info
     class_name = CLASSES[predicted_class]

@@ -1,3 +1,18 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# Dataset and test files
+data/
+dataset-resized.zip
+dataset-resized/
+test_images/
+
+# Model Weights and Checkpoints
+saved_models/*.pth
+saved_models/*.pt
+checkpoints/
+
+# Virtual environments
+venv/
+.env
